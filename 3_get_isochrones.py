@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PosixPath
 import matplotlib.pyplot as plt
 import sys
 import argparse
@@ -71,6 +71,7 @@ def parse_flags():
     parser.add_argument('--cluster-type', type=str, help="Cluster Type: {Globular Cluster, GC, OpenCluster, OC, Other}")
     parser.add_argument('--shift-color', type=float, help="When one isochrone is selected, create a second one shifting its color")
     parser.add_argument('--shift-mag', type=float, help="When one isochrone is selected, create a second one shifting its color")
+    parser.add_argument('--line-over-ms-turnoff', type=float, help="If a Turn-off Point is found, then plot a horizontal line X mags over it")
 
     # Parse the command-line arguments
     args = parser.parse_args()
@@ -85,9 +86,9 @@ def check_arguments_provided(args)->None:
             print("    Distance is required to fit the data to PARSEC Isochrones")
             sys.exit(1)
         if args.extinction is None:
-            print("[-] You have provided data but you have not provided extinction A_v ('--extinction')")
-            print("    Extinction is required to fit data to PARSEC Isochrones")
-            sys.exit(1)
+                print("[-] You have provided data but you have not provided extinction A_v ('--extinction')")
+                print("    Extinction is required to fit data to PARSEC Isochrones")
+                sys.exit(1)
     return
 
 
@@ -101,7 +102,7 @@ def read_online_dat_file(url: str) -> list[str] | None:
     return lines
 
 
-def read_PARSEC_isochrone_file(args):
+def read_PARSEC_isochrone_file(args)->list[str]:
     file_path = args.isochrones_filename
     print("[+] Reading file containing isochrones...")
     lines = []
@@ -121,7 +122,7 @@ def read_PARSEC_isochrone_file(args):
     return lines
 
 
-def get_different_log_age_and_MH_combinations(lines: list[str], header_file : str) -> list[isochrone_combinations]: 
+def get_different_log_age_and_MH_combinations(lines: list[str], header_file : str) -> list[isochrone_combinations] | None:
     id_isochrone: int = 1
     list_of_isochrones = []
     for number_line, line in enumerate(lines):
@@ -145,6 +146,9 @@ def get_different_log_age_and_MH_combinations(lines: list[str], header_file : st
                 current_isochrone_combination.lines_containing_data.append(line)
         except ValueError:
             continue
+    if len(list_of_isochrones) == 0:
+        print("[-] No isochrones could be detected")
+        sys.exit(1)
     print(f"[+] Isochrones extracted: {len(list_of_isochrones)} extracted")
     return list_of_isochrones
 
@@ -180,17 +184,21 @@ def correct_data(args, magnitude_to_correct, color_to_correct,
     return color_corrected, absolute_magnitude
 
 
+def save_data_into_file(filename_to_save_data: Path, data_to_save: isochrone_combinations)->None:
+    with open(filename_to_save_data, 'w') as f:
+        for data in data_to_save.lines_containing_data:
+            f.write(data+"\n")
+    return
+
+
 def save_isochrones(args, list_of_isochrones: list[isochrone_combinations],
                     directory_containing_isochrones_data: str = "isochrones"
                     ) -> list[data_to_plot]:
-    filename_containing_data = args.isochrones_filename
     list_of_data_to_plot = []
+    filename_containing_data = args.isochrones_filename
     parent_directory = Path(filename_containing_data).parent
     isochrones_folder = parent_directory / directory_containing_isochrones_data
-    if not isochrones_folder.exists():
-        print(f"[+] '{directory_containing_isochrones_data}' not found. Creating it...")
-        isochrones_folder.mkdir()
-    for isochrone in list_of_isochrones:
+    for index, isochrone in enumerate(list_of_isochrones):
         data_for_future_plot = data_to_plot(id=isochrone.isochrone_id, log_age=isochrone.log_age, MH=isochrone.MH)
         for line_containing_data in isochrone.lines_containing_data:
             if line_containing_data.startswith("#"):
@@ -206,17 +214,27 @@ def save_isochrones(args, list_of_isochrones: list[isochrone_combinations],
         list_of_data_to_plot.append(data_for_future_plot) 
         filename_to_save_data = isochrones_folder / f"{isochrone.isochrone_id}_log_age_{str(isochrone.log_age).replace('.','_')}_{str(isochrone.MH).replace('.','_')}.dat"
         if args.save_isochrones:
-            with open(filename_to_save_data, 'w') as f:
-                for data in isochrone.lines_containing_data:
-                    f.write(data+"\n")
-            print(f"[+] Data succesfully written into '{isochrones_folder}' directory")
+            if not isochrones_folder.exists():
+                print(f"[+] '{directory_containing_isochrones_data}' not found. Creating it...")
+                isochrones_folder.mkdir()
+            if args.select_isochrone is not None and args.select_isochrone-1 == index:
+                print(f"[+] Saving data for isochrone number {args.select_isochrone}...")
+                save_data_into_file(filename_to_save_data, isochrone)
+            if args.select_isochrone is None:
+                if index == 0:
+                    print("[+] Saving data for all isochrones...")
+                save_data_into_file(filename_to_save_data, isochrone)
+    print(f"[+] Data succesfully written into '{isochrones_folder}' directory")
     return list_of_data_to_plot
 
 
-def plot_multiple_isochrones(args, list_of_data_to_plot: list[data_to_plot]) -> None:
+def plot_multiple_isochrones(args, list_of_data_to_plot: list[data_to_plot], 
+                             data_color=None, data_magnitude=None) -> None:
     colors_to_plot = ['red', 'green', 'blue', 'orange', 'purple', 'yellow', 'cyan', 'magenta']  
     markers_list = ['o', '^', '*', 's', 'd']
     _, ax = plt.subplots()
+    if data_color is not None and data_magnitude is not None:
+        ax.scatter(data_color, data_magnitude, s=4., color="black")
     for index, data in enumerate(list_of_data_to_plot):
         color = data.color
         marker_selected = markers_list[index % len(markers_list)]
@@ -244,6 +262,8 @@ def plot_one_isochrone(args, list_of_data_to_plot: list[data_to_plot], data_inde
     if turnoff_points is not None:
         plt.axhline(y = turnoff_points.magnitude, color = 'gray', linestyle = '--', alpha=0.5)
         plt.axvline(x = turnoff_points.color, color = 'gray', linestyle = '--', alpha=0.5)
+        if args.line_over_ms_turnoff is not None:
+            plt.axhline(y = turnoff_points.magnitude-args.line_over_ms_turnoff, color = "green", linestyle = "--")
 
         plt.plot(turnoff_points.color, turnoff_points.magnitude, 'rX', markersize=10)
     if data_color is not None and data_magnitude is not None:
@@ -263,7 +283,6 @@ def plot_isochrones(args, list_of_data_to_plot: list[data_to_plot]) ->None:
         if which_data_to_plot < len(list_of_data_to_plot) and which_data_to_plot >= 0:
             turnoff_point = get_MSTO_Turnoff(args, list_of_data_to_plot, which_data_to_plot)
             if args.data_filename:
-                plot_data = True
                 gaia_data = Table.read(args.data_filename, format="ascii.ecsv")
                 # Get the parameters from Gaia DR3 data
                 G_data = gaia_data['phot_g_mean_mag']
@@ -280,7 +299,19 @@ def plot_isochrones(args, list_of_data_to_plot: list[data_to_plot]) ->None:
             print(f"[-] You want to get isochrone number {which_data_to_plot+1}. However, only up to {len(list_of_data_to_plot)} are available")
             sys.exit(1)
     else:
-        plot_multiple_isochrones(args, list_of_data_to_plot)
+        if args.data_filename:
+            gaia_data = Table.read(args.data_filename, format="ascii.ecsv")
+            # Get the parameters from Gaia DR3 data
+            G_data = gaia_data['phot_g_mean_mag']
+            G_BP_data = gaia_data['phot_bp_mean_mag']
+            G_RP_data = gaia_data['phot_rp_mean_mag']
+            color_data = gaia_data['bp_rp']
+            # Correct data by extinction and pass it from apparent to absolute magnitude
+            corrected_color, absolute_magnitude_data = correct_data(args, G_BP_data, color_data, A_GBP_sub_Av, A_GRP_sub_Av) 
+            plot_multiple_isochrones(args, list_of_data_to_plot, 
+                                     data_color=corrected_color, data_magnitude=absolute_magnitude_data)
+        else: 
+            plot_multiple_isochrones(args, list_of_data_to_plot)
 
 
 def get_MSTO_Turnoff(args, data_it: list[data_to_plot], data_index: int) -> CMD_coords | None:
