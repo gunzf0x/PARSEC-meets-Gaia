@@ -2,3 +2,4 @@ examples/isochrones/
 isochrones/
 matplotlibrc
 output*.dat
+results
