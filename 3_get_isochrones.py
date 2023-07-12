@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from pathlib import Path, PosixPath
+from pathlib import Path
 import matplotlib.pyplot as plt
 import sys
 import argparse
@@ -164,15 +164,15 @@ def print_obtained_isochrones(list_of_isochrones: list[isochrone_combinations]) 
     return
 
 
-def correct_color(color_to_correct, a_1: float, a_2: float):
-    return color_to_correct - (a_1 - a_2)
+def correct_color(color_to_correct, a_1: float, a_2: float, extinction: float):
+    return color_to_correct - ((a_1 - a_2)*extinction)
 
 
-def get_abs_magnitude_given_a_distance(distance: float, apparent_magnitude, Av):
+def get_abs_magnitude_given_a_distance(distance: float, apparent_magnitude: float, Av: float)-> float:
     return apparent_magnitude - (5 * (np.log10(distance) - 1)) - Av
 
 
-def get_abs_magnitude_given_distance_modulus(distance_modulus: float, apparent_magnitude, Av):
+def get_abs_magnitude_given_distance_modulus(distance_modulus: float, apparent_magnitude: float, Av: float)->float:
     return apparent_magnitude - distance_modulus - Av
 
 
@@ -182,7 +182,7 @@ def correct_data(args, magnitude_to_correct, color_to_correct,
         absolute_magnitude = get_abs_magnitude_given_a_distance(args.distance, magnitude_to_correct, args.extinction)
     elif args.d_modulus is not None:
         absolute_magnitude = get_abs_magnitude_given_distance_modulus(args.d_modulus, magnitude_to_correct, args.extinction)
-    color_corrected = correct_color(color_to_correct, A_GBP_sub_Av, A_GRP_sub_Av)
+    color_corrected = correct_color(color_to_correct, A_GBP_sub_Av, A_GRP_sub_Av, args.extinction)
     return color_corrected, absolute_magnitude
 
 
