@@ -4,6 +4,7 @@ import sys
 import matplotlib.pyplot as plt
 from astropy.table import Table
 import numpy as np
+from pathlib import Path
 
 
 # Conversion factors from PARSEC for passbands 
@@ -37,12 +38,12 @@ class ZAMS:
     magnitude: float
 
 
-def parse_flags():
+def parse_flags() -> argparse.Namespace:
     """
     Parse flags from user
     """
     # Create the parser
-    parser = argparse.ArgumentParser(description='Plot isochrones from PARSEC to Gaia DR3 data.')
+    parser = argparse.ArgumentParser(description='Plot Zero Age Main-Sequence (ZAMS) and an isochrone to GaiaDR3 data.')
     # Add flags/options
     parser.add_argument('-i', '--isochrones-filename', type=str, help='Filename containing PARSEC isochrones to create ZAMS', required=True)
     parser.add_argument('-f', '--data-filename', type=str, help='Filename containing original data to compare ZAMS')
@@ -52,7 +53,8 @@ def parse_flags():
     parser.add_argument('-dm', '--d-modulus', type=float, help="Distance modulus (mag)")
     parser.add_argument('--first-n-elements', type=int, default=0, help='Select the first N elements of the isochrone')
     parser.add_argument('--last-n-elements', type=int, default=3, help='Select the last N elements of the isochrone')
-    parser.add_argument('--save-isochrones', action='store_true', help="Save different PARSEC isochrones found in separated files")
+    parser.add_argument('--save-isochrones', action='store_true', help="Save ZAMS and isochrone cut found in files")
+    parser.add_argument('--object-name-to-save', type = str, help='Object name to save the data. For example, if ou provide "NGC104", output will be saved as "ngc104_ZAMS.dat"')
     parser.add_argument('--show-first-n-elem-isochrone', type=int, default=32, help="Select the first N elements to show for isochrone provided to compare with ZAMS")
     parser.add_argument('--show-last-n-elem-isochrone', type=int, default=350, help="Select the last N elements to show for isochrone provided to compare with ZAMS")
 
@@ -208,6 +210,61 @@ def plot_isochrones(args, data_plot_list: list[ZAMS])->None:
     plt.close()
 
 
+def save_isochrones_to_file(args: argparse.Namespace, data_lines: list[str])->None:
+    if not args.save_isochrones:
+        print("[!] Data not saved")
+        return
+    # Select lines we are interested in. For ZAMS, it is the first line where "label=1" and the age has changed wrt previous line
+    all_data = []
+    data_to_write = []
+    list_of_ages = []
+    list_of_metallicities = []
+    for index, line in enumerate(data_lines):
+        if line.startswith("# Zini") and index == 0:
+            all_data.append(line+'\n')
+        elif line.startswith("# Z ini") and index != 0:
+            continue
+        elif line.startswith("#isochrone terminated"):
+            continue
+        else:
+            all_data.append(line+'\n')
+
+    previous_MH, previous_log_age = None, None
+    for index, data in enumerate(all_data):
+        if data.startswith("# Zini") and index == 0:
+            data_to_write.append(data)
+            continue
+        if data.startswith("# Zini") and index != 0:
+            continue
+        if data.startswith("#isochrone terminated"):
+            continue
+        MH = float(data.split()[1])
+        log_age = float(data.split()[2])
+        label = int(data.split()[9])
+        if MH != previous_MH and index > 1:
+            print(f"[!] Error. All metallicities must be the same")
+            print(f"    Metallicity in line number {index+1} is {MH:.2f}, while previous value is {previous_MH:.2f}")
+            sys.exit(1)
+        if log_age != previous_log_age and label == 1:
+            data_to_write.append(data)
+            previous_log_age = log_age
+        previous_MH = MH
+    # Save file
+    file_path = Path(args.isochrones_filename)
+    parent_directory = file_path.parent
+    if args.object_name_to_save is not None:
+        object_str = args.object_name_to_save.lower()
+    else:
+        print("[!] You have not provided a Object name to save files.")
+        object_str = str(input("    Please enter your object name here: ")).lower()
+    output_file_path = parent_directory / f"{object_str}_ZAMS.dat"
+    with open(output_file_path, 'w') as f:
+        for write_data in data_to_write:
+            f.write(write_data)
+    print(f"[+] Data saved as {str(output_file_path)!r}")
+    return
+
+
 def main():
     # Get arguments from user
     args = parse_flags()
@@ -221,6 +278,8 @@ def main():
     data_ZAMS = get_ZAMS_data_by_label(args, list_of_isochrones)
     # Plot ZAMS
     plot_isochrones(args, data_ZAMS)
+    # Save ZAMS
+    save_isochrones_to_file(args, data_lines)
     
 
 if __name__ == "__main__":

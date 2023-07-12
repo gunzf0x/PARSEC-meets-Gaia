@@ -49,7 +49,7 @@ def check_if_user_has_provided_arguments()->None:
     return
 
 
-def parse_flags():
+def parse_flags() -> argparse.Namespace:
     """
     Parse flags from user
     """
@@ -68,17 +68,19 @@ def parse_flags():
     parser.add_argument('--last-n-elements', type=int, default=260, help='Select the last N elements of the isochrone')
     parser.add_argument('--save-isochrones', action='store_true', help="Save different PARSEC isochrones found in separated files")
     parser.add_argument('--print-isochrone-details', action='store_true', help="Print some details about the isochrones found in PARSEC file")
-    parser.add_argument('--cluster-type', type=str, help="Cluster Type: {Globular Cluster, GC, OpenCluster, OC, Other}")
+    parser.add_argument('--object-type', type=str, help="Cluster Type: {Globular Cluster, GC, OpenCluster, OC, Other}")
     parser.add_argument('--shift-color', type=float, help="When one isochrone is selected, create a second one shifting its color")
     parser.add_argument('--shift-mag', type=float, help="When one isochrone is selected, create a second one shifting its color")
     parser.add_argument('--line-over-ms-turnoff', type=float, help="If a Turn-off Point is found, then plot a horizontal line X mags over it")
+    parser.add_argument('--save-output', action='store_true', help='Save parameters found for 1 isochrone in a file')
+    parser.add_argument('--object-name', type=str, help="Object name to write, if enabled, into output file")
 
     # Parse the command-line arguments
     args = parser.parse_args()
     return args
 
 
-def check_arguments_provided(args)->None:
+def check_arguments_provided(args: argparse.Namespace)->None:
     if args.data_filename is not None:
         if args.distance is None and args.d_modulus is None:
             print("[-] You have provided data but you have not provided distance.")
@@ -102,7 +104,7 @@ def read_online_dat_file(url: str) -> list[str] | None:
     return lines
 
 
-def read_PARSEC_isochrone_file(args)->list[str]:
+def read_PARSEC_isochrone_file(args: argparse.Namespace)->list[str]:
     file_path = args.isochrones_filename
     print("[+] Reading file containing isochrones...")
     lines = []
@@ -191,7 +193,7 @@ def save_data_into_file(filename_to_save_data: Path, data_to_save: isochrone_com
     return
 
 
-def save_isochrones(args, list_of_isochrones: list[isochrone_combinations],
+def save_isochrones(args: argparse.Namespace, list_of_isochrones: list[isochrone_combinations],
                     directory_containing_isochrones_data: str = "isochrones"
                     ) -> list[data_to_plot]:
     list_of_data_to_plot = []
@@ -228,7 +230,7 @@ def save_isochrones(args, list_of_isochrones: list[isochrone_combinations],
     return list_of_data_to_plot
 
 
-def plot_multiple_isochrones(args, list_of_data_to_plot: list[data_to_plot], 
+def plot_multiple_isochrones(args: argparse.Namespace, list_of_data_to_plot: list[data_to_plot], 
                              data_color=None, data_magnitude=None) -> None:
     colors_to_plot = ['red', 'green', 'blue', 'orange', 'purple', 'yellow', 'cyan', 'magenta']  
     markers_list = ['o', '^', '*', 's', 'd']
@@ -251,9 +253,8 @@ def plot_multiple_isochrones(args, list_of_data_to_plot: list[data_to_plot],
     plt.close()
 
 
-def plot_one_isochrone(args, list_of_data_to_plot: list[data_to_plot], data_index: int,
-                       turnoff_points: CMD_coords | None,
-                       data_color=None, data_magnitude=None) -> None:
+def plot_one_isochrone(args: argparse.Namespace, list_of_data_to_plot: list[data_to_plot], data_index: int,
+                       turnoff_points: CMD_coords | None, data_color=None, data_magnitude=None) -> None:
     color = list_of_data_to_plot[data_index].color[args.first_n_elements:-args.last_n_elements]
     magnitude = list_of_data_to_plot[data_index].magnitude[args.first_n_elements:-args.last_n_elements]
     plt.plot(color, magnitude, color="orange")
@@ -273,14 +274,14 @@ def plot_one_isochrone(args, list_of_data_to_plot: list[data_to_plot], data_inde
     plt.close()
 
 
-def plot_isochrones(args, list_of_data_to_plot: list[data_to_plot]) ->None:
+def plot_isochrones(args: argparse.Namespace, list_of_data_to_plot: list[data_to_plot]):
     # If the user wants to plot only one plot, plot it
     if isinstance(args.select_isochrone, int):
         which_data_to_plot = args.select_isochrone - 1
-        print(f"    [*] Isochrone number: {which_data_to_plot+1}")
-        print(f"    [*] log10 (Age/yr): {list_of_data_to_plot[which_data_to_plot].log_age:.3f}")
-        print(f"    [*] [M/H]: {list_of_data_to_plot[which_data_to_plot].MH:.3f}")
         if which_data_to_plot < len(list_of_data_to_plot) and which_data_to_plot >= 0:
+            print(f"    [*] Isochrone number: {which_data_to_plot+1}")
+            print(f"    [*] log10 (Age/yr): {list_of_data_to_plot[which_data_to_plot].log_age:.3f}")
+            print(f"    [*] [M/H]: {list_of_data_to_plot[which_data_to_plot].MH:.3f}")
             turnoff_point = get_MSTO_Turnoff(args, list_of_data_to_plot, which_data_to_plot)
             if args.data_filename:
                 gaia_data = Table.read(args.data_filename, format="ascii.ecsv")
@@ -295,6 +296,7 @@ def plot_isochrones(args, list_of_data_to_plot: list[data_to_plot]) ->None:
                                    data_color=corrected_color, data_magnitude=absolute_magnitude_data)
             else:
                 plot_one_isochrone(args, list_of_data_to_plot, which_data_to_plot, turnoff_point)
+            return turnoff_point, list_of_data_to_plot[which_data_to_plot]
         else:
             print(f"[-] You want to get isochrone number {which_data_to_plot+1}. However, only up to {len(list_of_data_to_plot)} are available")
             sys.exit(1)
@@ -312,9 +314,11 @@ def plot_isochrones(args, list_of_data_to_plot: list[data_to_plot]) ->None:
                                      data_color=corrected_color, data_magnitude=absolute_magnitude_data)
         else: 
             plot_multiple_isochrones(args, list_of_data_to_plot)
+        return None, None
 
 
-def get_MSTO_Turnoff(args, data_it: list[data_to_plot], data_index: int) -> CMD_coords | None:
+
+def get_MSTO_Turnoff(args: argparse.Namespace, data_it: list[data_to_plot], data_index: int) -> CMD_coords | None:
     """
     Get the MSTO point based on the inclination 
     """
@@ -345,6 +349,93 @@ def get_MSTO_Turnoff(args, data_it: list[data_to_plot], data_index: int) -> CMD_
         return
 
 
+def get_object_type(args: argparse.Namespace) -> str:
+    globular_cluster_option_list = ['gc', 'globularcluster', 'globular cluster', 'globular_cluster', 'g_cluster']
+    open_cluster_option_list = ['oc', 'opencluster', 'open cluster', 'open_cluster', 'o_cluster']
+    other_object_option_list = ['other', 'o', 'others']
+
+    if args.object_type is None:
+        print("[!] You have not provided a Object type. Please provide one from {GC, OC, Other} ")
+        object_type = str(input("    Object type: ")).lower()
+    else:
+        object_type = args.object_type.lower()
+
+    if object_type in globular_cluster_option_list:
+        object_type = 'gc'
+    elif object_type in open_cluster_option_list:
+        object_type = 'oc'
+    elif object_type in other_object_option_list:
+        object_type = 'other'
+    else:
+        print(f"[!] You have provided an invalid object type ({object_type!r}). Classifying it as 'other'")
+        object_type = 'other'
+    return object_type
+
+
+def save_data_to_output_file(args: argparse.Namespace, turnoff_point: CMD_coords | None,
+                             isochrone_selected: data_to_plot | None,
+                             output_filename = 'parameters_isolated_isochrone.dat') -> None:
+    # Check if the user wants to save data into an output file
+    if not args.save_output:
+        return
+    if isochrone_selected is None:
+        print("[!] You have to select an isochrone to save. Select an isochrone with '--select-isochrone' and retry")
+        print("    Exiting...")
+        sys.exit(1)
+    # Check if a Turnoff Point was obtained, if so, we can continue
+    if turnoff_point is None:
+        print("[!] You have to set a Turnoff-Point to save it into an output file. Select a TO point with '--get-turnoff-candidate' and retry")
+        print("    Exiting...")
+        sys.exit(1)
+    # Get the object name if provided. If not, ask for it
+    if args.object_name is None:
+        object_name = str(input("[*] You have not provided a object name to save file. Please provide it here: "))
+    else:
+        object_name = args.object_name
+    if args.shift_mag is None or args.shift_color is None:
+        print("[!] You must provide a value for '--shift-mag' and '--shift-color' to save output into a file")
+        print("    Exiting...")
+        sys.exit(1)
+    # Get parameters to save into output file
+    file_containing_multiple_isochrones = args.isochrones_filename
+    selected_isochrone_id = isochrone_selected.id
+    object_type = get_object_type(args)
+    log_age = isochrone_selected.log_age
+    MH = isochrone_selected.MH
+    extinction = args.extinction
+    distance = args.distance
+    MSTO_color = turnoff_point.color
+    MSTO_mag = turnoff_point.magnitude
+    shifted_color = args.shift_color
+    shifted_mag = args.shift_mag
+    first_n_elem_selected = args.first_n_elements
+    last_n_elem_selected = args.last_n_elements
+    line_to_write = f"{object_name.lower()} {file_containing_multiple_isochrones} {selected_isochrone_id} {object_type}"
+    line_to_write = f"{line_to_write} {log_age} {MH} {extinction} {distance} {MSTO_color:.3f} {MSTO_mag:.3f}"
+    line_to_write = f"{line_to_write} {shifted_color} {shifted_mag} {first_n_elem_selected} {last_n_elem_selected}\n"
+    # Check where is this script stored, so the file will be written into the same directory
+    script_path = Path(__file__)
+    script_directory = script_path.parent
+    script_save_file = script_directory / output_filename
+    if script_save_file.exists():
+        with script_save_file.open('r') as f:
+            lines = f.readlines()
+        for line in lines:
+            if line.split()[0].lower() == object_name.lower():
+                print(f"[!] Object {object_name!r} has already been added in {str(script_save_file)!r}")
+        with script_save_file.open('a') as f:
+            f.write(line_to_write)
+        print(f"[+] Succesfully saved data for {object_name!r}")
+    else:
+        header_to_write = "# name file_containing_multiple_isochrones isochrone_id_selected object_type"
+        header_to_write = f"{header_to_write} log_age MH Av distance MSTO_color MSTO_mag shifted_color shifted_mag first_elem_isochrone last_elem_isochrone\n"
+        with script_save_file.open('w') as f:
+            f.write(header_to_write)
+            f.write(line_to_write)
+        print(f"[+] Succesfully created file {str(script_save_file)!r} and saved data from {object_name!r}")
+    return
+
+
 def main():
     # Check if the user has provided arguments. Otherwise print a "help" message
     check_if_user_has_provided_arguments()
@@ -363,7 +454,9 @@ def main():
     # If desired, save the different isochrones found
     data_to_plot_var = save_isochrones(args, list_of_isochrones)
     # Plot the isochrone
-    plot_isochrones(args, data_to_plot_var)
+    MS_TO_point, isochrone_selected = plot_isochrones(args, data_to_plot_var)
+    # Save output to a file if '--save-output' is enabled
+    save_data_to_output_file(args, MS_TO_point, isochrone_selected)
 
 
 if __name__ == "__main__":
