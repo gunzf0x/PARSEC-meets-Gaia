@@ -220,7 +220,7 @@ def save_isochrones(args: argparse.Namespace, list_of_isochrones: list[isochrone
                 print(f"[+] '{directory_containing_isochrones_data}' not found. Creating it...")
                 isochrones_folder.mkdir()
             if args.select_isochrone is not None and args.select_isochrone-1 == index:
-                print(f"[+] Saving data for isochrone number {args.select_isochrone}...")
+                print(f"[+] Saving data for isochrone number {args.select_isochrone} in {filename_to_save_data}...")
                 save_data_into_file(filename_to_save_data, isochrone)
             if args.select_isochrone is None:
                 if index == 0:

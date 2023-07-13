@@ -53,7 +53,7 @@ def parse_flags() -> argparse.Namespace:
     parser.add_argument('-dm', '--d-modulus', type=float, help="Distance modulus (mag)")
     parser.add_argument('--first-n-elements', type=int, default=0, help='Select the first N elements of the isochrone')
     parser.add_argument('--last-n-elements', type=int, default=3, help='Select the last N elements of the isochrone')
-    parser.add_argument('--save-isochrones', action='store_true', help="Save ZAMS and isochrone cut found in files")
+    parser.add_argument('--save-zams', action='store_true', help="Save ZAMS and isochrone cut found in files")
     parser.add_argument('--object-name-to-save', type = str, help='Object name to save the data. For example, if ou provide "NGC104", output will be saved as "ngc104_ZAMS.dat"')
     parser.add_argument('--show-first-n-elem-isochrone', type=int, default=32, help="Select the first N elements to show for isochrone provided to compare with ZAMS")
     parser.add_argument('--show-last-n-elem-isochrone', type=int, default=350, help="Select the last N elements to show for isochrone provided to compare with ZAMS")
@@ -211,7 +211,7 @@ def plot_isochrones(args, data_plot_list: list[ZAMS])->None:
 
 
 def save_isochrones_to_file(args: argparse.Namespace, data_lines: list[str])->None:
-    if not args.save_isochrones:
+    if not args.save_zams:
         print("[!] Data not saved")
         return
     # Select lines we are interested in. For ZAMS, it is the first line where "label=1" and the age has changed wrt previous line
