@@ -4,3 +4,4 @@ matplotlibrc
 output*.dat
 parameters_obtained_for_isochrones.dat
 parameters_isolated_isochrone.dat
+*.pdf
