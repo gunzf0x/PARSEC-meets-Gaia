@@ -64,7 +64,7 @@ def parse_flags() -> argparse.Namespace:
     parser.add_argument('--first-n-elements-ZAMS', type=int, default=3, help='Select the first N elements for the ZAMS isochrone')
     parser.add_argument('--last-n-elements-ZAMS', type=int, default=12, help='Select the last N elements for the ZAMS isochrone')
     parser.add_argument('--skip-confirmation', action='store_true', help="Do not ask if you want to extract BSS, just does it")
-    parser.add_argument('--shift-n-times', type=float, default=2.0, help="Shift ZAMS N times more in color than the shifted isochrone")
+    parser.add_argument('--shift-n-times', type=float, default=3.0, help="Shift ZAMS N times more in color than the shifted isochrone")
     parser.add_argument('--show-only-contour', action='store_true', help="Only show lines that will set the region to select Blue Stragglers")
     parser.add_argument('--text-x-coord', type=float, help="X (color) coordinate to plot text in CMD")
     parser.add_argument('--text-y-coord', type=float, help="Y (color) coordinate to plot text in CMD")
@@ -217,7 +217,7 @@ def get_intersection_between_isochrone_and_line_fit(args: argparse.Namespace, or
 
 def get_intersection_between_isochrone_and_line_fit_right_mid(args:argparse.Namespace, original_data_isochrone: Table, 
                                                               data_file: isochrone_data, cut_value: float,
-                                                              MSTO_point: CMD_point) -> CMD_point | None:
+                                                              MSTO_point: CMD_point):
     """
     Now we want to get the intersection between the magnitude (Y-axis) and the fitting isochrone
     """
@@ -254,7 +254,11 @@ def get_intersection_between_isochrone_and_line_fit_right_mid(args:argparse.Name
     if slope is None and intercept is None:
         print("[!] Slope and intercept are 'None'")
         sys.exit(1)
-    return CMD_point(color=cut_value, magnitude=slope*cut_value + intercept)
+    point_to_return = CMD_point(color=cut_value, magnitude=slope*cut_value + intercept)
+    if point_to_return.magnitude < MSTO_point.magnitude - args.subs_mag_MSTO:
+        return point_to_return, False
+    else:
+        return point_to_return, True
 
 
 def get_data_inside_a_range(args: argparse.Namespace, original_data: Table, isochrone_type: str,
@@ -281,15 +285,24 @@ def get_data_inside_a_range(args: argparse.Namespace, original_data: Table, isoc
         apparent_color_isochrone = np.asarray([pass_derredened_color_to_apparent_color(og_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction) for og_color in fit_isochrone_og_color]) - data_file.shifted_color
         apparent_magnitude_isochrone = np.asarray([get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, og_mag, data_file.extinction) for og_mag in data_table['G_BPmag']]) - data_file.shifted_magnitude
         bottom_value = MSTO_point.magnitude + args.add_mag_MSTO
-        right_side_value = MSTO_point.color + data_file.shifted_color
+        top_value = MSTO_point.magnitude - args.subs_mag_MSTO
+        if args.add_color_MSTO is None:
+            right_side_value = MSTO_point.color + data_file.shifted_color
+        else:
+            right_side_value = MSTO_point.color + args.add_color_MSTO
         # Filter by all the values above the MSTO point
         mask_data = apparent_magnitude_isochrone < bottom_value
+        apparent_magnitude_isochrone = apparent_magnitude_isochrone[mask_data]
+        apparent_color_isochrone = apparent_color_isochrone[mask_data]
+        # Filter by top magnitude value
+        mask_data = apparent_magnitude_isochrone > top_value
         apparent_magnitude_isochrone = apparent_magnitude_isochrone[mask_data]
         apparent_color_isochrone = apparent_color_isochrone[mask_data]
         # Filter by everything with a color lower than the max allowed right side
         mask_data = apparent_color_isochrone < right_side_value
         apparent_magnitude_isochrone = apparent_magnitude_isochrone[mask_data]
         apparent_color_isochrone = apparent_color_isochrone[mask_data]
+         
     else:
         print(f"[!] You have provided an invalid data type in 'get_data_inside_range' function ({isochrone_type!r})")
         sys.exit(1)
@@ -306,8 +319,8 @@ def set_selection_contour_area(args: argparse.Namespace, data_file: isochrone_da
     top_right_vertex = CMD_point(color=MSTO_point.color + args.add_color_MSTO, magnitude=MSTO_point.magnitude - args.subs_mag_MSTO)
     contour.colors.append(top_right_vertex.color)
     contour.magnitudes.append(top_right_vertex.magnitude)
-    top_left_vertex = get_intersection_between_isochrone_and_line_ZAMS(args, ZAMS_isochrone, data_file, MSTO_point.magnitude - args.subs_mag_MSTO)
     # 2) Get top left vertex
+    top_left_vertex = get_intersection_between_isochrone_and_line_ZAMS(args, ZAMS_isochrone, data_file, MSTO_point.magnitude - args.subs_mag_MSTO)
     contour.colors.append(top_left_vertex.color)
     contour.magnitudes.append(top_left_vertex.magnitude)
     # 3) Get the ZAMS that is at the left side, between the vertical lines
@@ -330,9 +343,16 @@ def set_selection_contour_area(args: argparse.Namespace, data_file: isochrone_da
         contour.colors.append(c)
         contour.magnitudes.append(m)
     # 7) Get the mid-right point. Where the fitting isochrone touches the color-limit right side
-    mid_right_vertex = get_intersection_between_isochrone_and_line_fit_right_mid(args, fit_isochrone, data_file, MSTO_point.color + args.add_color_MSTO , MSTO_point)
-    contour.colors.append(mid_right_vertex.color)
-    contour.magnitudes.append(mid_right_vertex.magnitude)
+    mid_right_vertex, doIntercept = get_intersection_between_isochrone_and_line_fit_right_mid(args, fit_isochrone, data_file, MSTO_point.color + args.add_color_MSTO , MSTO_point)
+    if doIntercept:
+        contour.colors.append(mid_right_vertex.color)
+        contour.magnitudes.append(mid_right_vertex.magnitude)
+    else:
+        aux_vertex = get_intersection_between_isochrone_and_line_fit(args, fit_isochrone, data_file, MSTO_point.magnitude - args.subs_mag_MSTO)
+        contour.colors.append(aux_vertex.color)
+        contour.magnitudes.append(aux_vertex.magnitude)
+        contour.colors = contour.colors[1:]
+        contour.magnitudes = contour.magnitudes[1:]
     # Finally, enclose the area repeating the first point
     contour.colors.append(contour.colors[0])
     contour.magnitudes.append(contour.magnitudes[0])
@@ -416,7 +436,7 @@ def plot_before_extracting(args: argparse.Namespace, gaia_data: Table, ZAMS_isoc
                 color_stragglers_for_plot = get_colors_to_plot_for_stragglers(stragglers)
             color_stragglers = stragglers['phot_bp_mean_mag'] - stragglers['phot_rp_mean_mag']
             magnitude_stragglers = stragglers['phot_bp_mean_mag']
-            plt.scatter(color_stragglers, magnitude_stragglers, color=color_stragglers_for_plot)
+            plt.scatter(color_stragglers, magnitude_stragglers, color=color_stragglers_for_plot, s=4)
             n_bss, n_yss, n_rss = get_number_of_stragglers_type(stragglers)
             if args.text_x_coord is not None and args.text_y_coord is not None and text_number==4:
                 text = f"BSS: {n_bss}\nYSS: {n_yss}\nRSS: {n_rss}"

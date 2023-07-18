@@ -214,7 +214,7 @@ def save_isochrones(args: argparse.Namespace, list_of_isochrones: list[isochrone
             except ValueError:
                 print(f"[-] Error trying when trying to convert '{line_containing_data.split()[-1]}' , '{line_containing_data.split()[-2]}' to floats")
         list_of_data_to_plot.append(data_for_future_plot) 
-        filename_to_save_data = isochrones_folder / f"{isochrone.isochrone_id}_log_age_{str(isochrone.log_age).replace('.','_')}_{str(isochrone.MH).replace('.','_')}.dat"
+        filename_to_save_data = isochrones_folder / f"{isochrone.isochrone_id}_log_age_{str(isochrone.log_age).replace('.','_')}_M_H_{str(isochrone.MH).replace('.','_')}.dat"
         if args.save_isochrones:
             if not isochrones_folder.exists():
                 print(f"[+] '{directory_containing_isochrones_data}' not found. Creating it...")
@@ -268,7 +268,7 @@ def plot_one_isochrone(args: argparse.Namespace, list_of_data_to_plot: list[data
 
         plt.plot(turnoff_points.color, turnoff_points.magnitude, 'rX', markersize=10)
     if data_color is not None and data_magnitude is not None:
-        plt.scatter(data_color, data_magnitude)
+        plt.scatter(data_color, data_magnitude, s=2, color="black")
     plt.gca().invert_yaxis()
     plt.show()
     plt.close()
