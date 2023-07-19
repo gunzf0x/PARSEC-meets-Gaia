@@ -28,6 +28,7 @@ class isochrone_data:
     MSTO_magnitude: float
     shifted_color: float
     shifted_magnitude: float
+    left_limit: float | str
     first_n_elem_isochrone: int
     last_n_elem_isochrone: int
 
@@ -119,13 +120,29 @@ def get_data_from_datafile(args: argparse.Namespace)-> isochrone_data | None:
         lines = f.readlines()
     for line in lines:
         if line.split()[0].lower() == args.object_name.lower():
-            return isochrone_data(name=line.split()[0], object_type=line.split()[3],
-                                  log_age=float(line.split()[4]), MH=float(line.split()[5]),
-                                  extinction=float(line.split()[6]), distance=float(line.split()[7]),
-                                  MSTO_color=float(line.split()[8]), MSTO_magnitude=float(line.split()[9]),
-                                  shifted_color=float(line.split()[10]), shifted_magnitude=float(line.split()[11]),
-                                  first_n_elem_isochrone=int(line.split()[12]),
-                                  last_n_elem_isochrone=int(line.split()[13]))
+            name = line.split()[0]
+            object_type=line.split()[3]
+            log_age=float(line.split()[4])
+            MH=float(line.split()[5])
+            extinction=float(line.split()[6])
+            distance=float(line.split()[7])
+            MSTO_color=float(line.split()[8])
+            MSTO_magnitude=float(line.split()[9])
+            shifted_color=float(line.split()[10])
+            shifted_magnitude=float(line.split()[11])
+            try:
+                left_limit=float(line.split()[12])
+            except ValueError:
+                left_limit = "--"
+            first_n_elem_isochrone=int(line.split()[13])
+            last_n_elem_isochrone=int(line.split()[14])
+            data_to_return = isochrone_data(name=name, object_type=object_type,log_age=log_age,
+                                            MH=MH, extinction=extinction, distance=distance, 
+                                            MSTO_color=MSTO_color, MSTO_magnitude=MSTO_magnitude,
+                                            shifted_color=shifted_color, shifted_magnitude=shifted_magnitude,
+                                            left_limit=left_limit, first_n_elem_isochrone=first_n_elem_isochrone,
+                                            last_n_elem_isochrone=last_n_elem_isochrone)
+            return data_to_return
     print(f"[!] Data for {args.object_name!r} could not be found in {str(path_object_datafile)!r}")
     print("Exiting...")
     sys.exit(1)
@@ -215,7 +232,7 @@ def get_intersection_between_isochrone_and_line_fit(args: argparse.Namespace, or
     return CMD_point(color=(cut_value-intercept)/slope, magnitude=cut_value)
 
 
-def get_intersection_between_isochrone_and_line_fit_right_mid(args:argparse.Namespace, original_data_isochrone: Table, 
+def get_intersection_between_isochrone_and_line_fit_right_mid(args: argparse.Namespace, original_data_isochrone: Table, 
                                                               data_file: isochrone_data, cut_value: float,
                                                               MSTO_point: CMD_point):
     """
@@ -226,6 +243,52 @@ def get_intersection_between_isochrone_and_line_fit_right_mid(args:argparse.Name
     isochrone_color_derredened = data_isochrone['G_BPmag'] - data_isochrone['G_RPmag']
     isochrone_color = np.asarray([pass_derredened_color_to_apparent_color(og_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction) for og_color in isochrone_color_derredened]) - data_file.shifted_color
     isochrone_app_mag = np.asarray([get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, og_mag, data_file.extinction) for og_mag in data_isochrone['G_BPmag']]) - data_file.shifted_magnitude
+    mask_data = isochrone_app_mag <= MSTO_point.magnitude + args.add_mag_MSTO
+    isochrone_app_mag = isochrone_app_mag[mask_data]
+    isochrone_color = isochrone_color[mask_data]
+    if len(isochrone_color) != len(isochrone_app_mag):
+        print("[!] Warning! List does not have the same length in 'get_intersection' for 'fit' isochrone (mid-right vertex)")
+        print(f"    Size magnitude list: {len(isochrone_app_mag)}; size colors list: {len(isochrone_color)}")
+        sys.exit(1)
+    for index in range(0, len(isochrone_color)):
+        if index == 0:
+            continue
+        try: 
+            prev_color = isochrone_color[index-1]
+            current_color = isochrone_color[index]
+        except IndexError:
+            print(f"[!] Error when trying to get index value (index '{index}' and '{index}' for 'fit' isochrone)")
+            print("    Maybe try to change '--first-n-elements-isochrone' and '--last-n-elements-isochrone' for fitting isochrone? (see '-h')")
+            sys.exit(1)
+        if (prev_color <= cut_value) and (cut_value <= current_color):
+            useful_index = index
+            break
+        if index == len(isochrone_color)-1:
+            print("[!] No value found")
+    prev_apparent_magnitude = isochrone_app_mag[useful_index-1]
+    current_apparent_magnitude = isochrone_app_mag[useful_index]
+    slope, intercept = fit_simple_line(prev_color, current_color, prev_apparent_magnitude, current_apparent_magnitude)
+    if slope is None and intercept is None:
+        print("[!] Slope and intercept are 'None'")
+        sys.exit(1)
+    point_to_return = CMD_point(color=cut_value, magnitude=slope*cut_value + intercept)
+    if point_to_return.magnitude < MSTO_point.magnitude - args.subs_mag_MSTO:
+        return point_to_return, False
+    else:
+        return point_to_return, True
+
+
+def get_intersection_between_zams_and_left_limit(args: argparse.Namespace, original_data_isochrone: Table, 
+                                                 data_file: isochrone_data, cut_value: float,
+                                                 MSTO_point: CMD_point):
+    """
+    Now we want to get the intersection between the magnitude (Y-axis) and ZAMS
+    """
+    data_isochrone: Table = copy.deepcopy(original_data_isochrone)
+    data_isochrone = data_isochrone[args.first_n_elements_ZAMS:-args.last_n_elements_ZAMS]
+    isochrone_color_derredened = data_isochrone['G_BPmag'] - data_isochrone['G_RPmag']
+    isochrone_color = np.asarray([pass_derredened_color_to_apparent_color(og_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction) for og_color in isochrone_color_derredened]) - (data_file.shifted_color * args.shift_n_times)
+    isochrone_app_mag = np.asarray([get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, og_mag, data_file.extinction) for og_mag in data_isochrone['G_BPmag']])
     mask_data = isochrone_app_mag <= MSTO_point.magnitude + args.add_mag_MSTO
     isochrone_app_mag = isochrone_app_mag[mask_data]
     isochrone_color = isochrone_color[mask_data]
@@ -255,21 +318,22 @@ def get_intersection_between_isochrone_and_line_fit_right_mid(args:argparse.Name
         print("[!] Slope and intercept are 'None'")
         sys.exit(1)
     point_to_return = CMD_point(color=cut_value, magnitude=slope*cut_value + intercept)
-    if point_to_return.magnitude < MSTO_point.magnitude - args.subs_mag_MSTO:
-        return point_to_return, False
-    else:
-        return point_to_return, True
+    return point_to_return
 
 
 def get_data_inside_a_range(args: argparse.Namespace, original_data: Table, isochrone_type: str,
-                            MSTO_point: CMD_point, data_file: isochrone_data):
+                            MSTO_point: CMD_point, data_file: isochrone_data,
+                            upper_point: CMD_point | None = None):
     data_table = copy.deepcopy(original_data)
     if isochrone_type.lower() == "zams":
         data_table = data_table[args.first_n_elements_ZAMS:-args.last_n_elements_ZAMS]
         ZAMS_derredened_color = data_table['G_BPmag'] - data_table['G_RPmag']
         apparent_color_isochrone = np.asarray([pass_derredened_color_to_apparent_color(og_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction) for og_color in ZAMS_derredened_color]) - data_file.shifted_color * args.shift_n_times
         apparent_magnitude_isochrone = np.asarray([get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, og_mag, data_file.extinction) for og_mag in data_table['G_BPmag']])
-        top_value = MSTO_point.magnitude - args.subs_mag_MSTO
+        if upper_point is not None:
+            top_value = upper_point.magnitude
+        else:
+            top_value = MSTO_point.magnitude - args.subs_mag_MSTO
         bottom_value = MSTO_point.magnitude + args.add_mag_MSTO
         # Filter by top value (delete every star brighter than the vertical top line)
         mask_data = top_value < apparent_magnitude_isochrone
@@ -319,15 +383,31 @@ def set_selection_contour_area(args: argparse.Namespace, data_file: isochrone_da
     top_right_vertex = CMD_point(color=MSTO_point.color + args.add_color_MSTO, magnitude=MSTO_point.magnitude - args.subs_mag_MSTO)
     contour.colors.append(top_right_vertex.color)
     contour.magnitudes.append(top_right_vertex.magnitude)
-    # 2) Get top left vertex
-    top_left_vertex = get_intersection_between_isochrone_and_line_ZAMS(args, ZAMS_isochrone, data_file, MSTO_point.magnitude - args.subs_mag_MSTO)
-    contour.colors.append(top_left_vertex.color)
-    contour.magnitudes.append(top_left_vertex.magnitude)
-    # 3) Get the ZAMS that is at the left side, between the vertical lines
-    left_ZAMS_color, left_ZAMS_magnitude = get_data_inside_a_range(args, ZAMS_isochrone, "zams", MSTO_point, data_file)
-    for c, m in zip(left_ZAMS_color, left_ZAMS_magnitude):
-        contour.colors.append(c)
-        contour.magnitudes.append(m)
+    # ! Set a condition: if we want to apply a max left limit for the ZAMS
+    if data_file.left_limit != "--" and MSTO_point.color - data_file.left_limit <= MSTO_point.color - args.add_color_MSTO:
+        # 2) Get top left vertex
+        top_left_vertex = CMD_point(color=MSTO_point.color - data_file.left_limit, magnitude=MSTO_point.magnitude - args.subs_mag_MSTO)
+        contour.colors.append(top_left_vertex.color)
+        contour.magnitudes.append(top_left_vertex.magnitude)
+        left_mid_point = get_intersection_between_zams_and_left_limit(args, ZAMS_isochrone, data_file, top_left_vertex.color, MSTO_point)
+        contour.colors.append(left_mid_point.color)
+        contour.magnitudes.append(left_mid_point.magnitude)
+        left_zams_color, left_zams_magnitude = get_data_inside_a_range(args, ZAMS_isochrone, "zams", MSTO_point, data_file,
+                                                                       upper_point=left_mid_point)
+        if len(left_zams_color) > 0 and len(left_zams_magnitude) > 0:
+            for c, m in zip(left_zams_color, left_zams_magnitude):
+                contour.colors.append(c)
+                contour.magnitudes.append(m)
+    else:
+        # 2) Get top left vertex
+        top_left_vertex = get_intersection_between_isochrone_and_line_ZAMS(args, ZAMS_isochrone, data_file, MSTO_point.magnitude - args.subs_mag_MSTO)
+        contour.colors.append(top_left_vertex.color)
+        contour.magnitudes.append(top_left_vertex.magnitude)
+        # 3) Get the ZAMS that is at the left side, between the vertical lines
+        left_ZAMS_color, left_ZAMS_magnitude = get_data_inside_a_range(args, ZAMS_isochrone, "zams", MSTO_point, data_file)
+        for c, m in zip(left_ZAMS_color, left_ZAMS_magnitude):
+            contour.colors.append(c)
+            contour.magnitudes.append(m)
     # 4) Get bottom left vertex
     bottom_left_vertex = get_intersection_between_isochrone_and_line_ZAMS(args, ZAMS_isochrone, data_file, MSTO_point.magnitude + args.add_mag_MSTO)
     contour.colors.append(bottom_left_vertex.color)
@@ -388,12 +468,16 @@ def plot_before_extracting(args: argparse.Namespace, gaia_data: Table, ZAMS_isoc
         plt.plot(fixed_fitting_isochrone_color, fixed_fitting_isochrone_magnitude, linestyle="-", color="orangered")
     plt.plot(shifted_ZAMS_color, shifted_ZAMS_mag, linestyle = "--", color = "orange")
     plt.plot(shifted_isochrone_color, shifted_isochrone_mag, linestyle = "--", color = "red")
+    alpha_val: float = 0.5
     plt.axhline(y=get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, data_file.MSTO_magnitude, data_file.extinction)+args.add_mag_MSTO, 
-               color='grey', linestyle='--')
+               color='grey', linestyle='--', alpha=alpha_val)
     plt.axhline(y=get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, data_file.MSTO_magnitude, data_file.extinction)-args.subs_mag_MSTO, 
-               color='grey', linestyle='--')
+               color='grey', linestyle='--', alpha=alpha_val)
     plt.axvline(x=pass_derredened_color_to_apparent_color(data_file.MSTO_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction)+args.add_color_MSTO,
-                linestyle='--', color = 'grey')
+                linestyle='--', color = 'grey', alpha=alpha_val)
+    if data_file.left_limit != "--":
+        plt.axvline(x=pass_derredened_color_to_apparent_color(data_file.MSTO_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction)-data_file.left_limit,
+                    linestyle="--", color='grey', alpha=alpha_val)
     plt.plot(pass_derredened_color_to_apparent_color(data_file.MSTO_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction),
              get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, data_file.MSTO_magnitude, data_file.extinction),
              marker="X", markersize=12, color="magenta",  markeredgecolor="black")

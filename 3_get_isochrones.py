@@ -76,6 +76,8 @@ def parse_flags() -> argparse.Namespace:
     parser.add_argument('--object-name', type=str, help="Object name to write, if enabled, into output file")
     parser.add_argument('--plot-cycle-isochrones', action='store_true', help="Iterate over isochrone options, showing them in a single plot")
     parser.add_argument('--start-from', type=int, default=0, help="Start from isochrone N if '--plot-cycle-isochrones' is enabled")
+    parser.add_argument('--left-limit', type=float, help="Add a color quantity (x-axis) to the MSTO. This will be the max value allowed for ZAMS.")
+
 
     # Parse the command-line arguments
     args = parser.parse_args()
@@ -438,9 +440,13 @@ def save_data_to_output_file(args: argparse.Namespace, turnoff_point: CMD_coords
     shifted_mag = args.shift_mag
     first_n_elem_selected = args.first_n_elements
     last_n_elem_selected = args.last_n_elements
+    if args.left_limit is not None:
+        left_limit = args.left_limit
+    else:
+        left_limit = "--"
     line_to_write = f"{object_name.lower()} {file_containing_multiple_isochrones} {selected_isochrone_id} {object_type}"
     line_to_write = f"{line_to_write} {log_age} {MH} {extinction} {distance} {MSTO_color:.3f} {MSTO_mag:.3f}"
-    line_to_write = f"{line_to_write} {shifted_color} {shifted_mag} {first_n_elem_selected} {last_n_elem_selected}\n"
+    line_to_write = f"{line_to_write} {shifted_color} {shifted_mag} {left_limit} {first_n_elem_selected} {last_n_elem_selected}\n"
     # Check where is this script stored, so the file will be written into the same directory
     script_path = Path(__file__)
     script_directory = script_path.parent
