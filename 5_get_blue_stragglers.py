@@ -310,7 +310,8 @@ def get_intersection_between_zams_and_left_limit(args: argparse.Namespace, origi
             useful_index = index
             break
         if index == len(isochrone_color)-1:
-            print("[!] No value found")
+            print("[!] No value found for ZAMS and left limit")
+            return [], []
     prev_apparent_magnitude = isochrone_app_mag[useful_index-1]
     current_apparent_magnitude = isochrone_app_mag[useful_index]
     slope, intercept = fit_simple_line(prev_color, current_color, prev_apparent_magnitude, current_apparent_magnitude)
