@@ -5,3 +5,4 @@ output*.dat
 parameters_obtained_for_isochrones.dat
 parameters_isolated_isochrone.dat
 *.pdf
+*_ZAMS.dat

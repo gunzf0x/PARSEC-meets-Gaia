@@ -74,6 +74,8 @@ def parse_flags() -> argparse.Namespace:
     parser.add_argument('--line-over-ms-turnoff', type=float, help="If a Turn-off Point is found, then plot a horizontal line X mags over it")
     parser.add_argument('--save-output', action='store_true', help='Save parameters found for 1 isochrone in a file')
     parser.add_argument('--object-name', type=str, help="Object name to write, if enabled, into output file")
+    parser.add_argument('--plot-cycle-isochrones', action='store_true', help="Iterate over isochrone options, showing them in a single plot")
+    parser.add_argument('--start-from', type=int, default=0, help="Start from isochrone N if '--plot-cycle-isochrones' is enabled")
 
     # Parse the command-line arguments
     args = parser.parse_args()
@@ -297,9 +299,35 @@ def plot_isochrones(args: argparse.Namespace, list_of_data_to_plot: list[data_to
             else:
                 plot_one_isochrone(args, list_of_data_to_plot, which_data_to_plot, turnoff_point)
             return turnoff_point, list_of_data_to_plot[which_data_to_plot]
+        
         else:
             print(f"[-] You want to get isochrone number {which_data_to_plot+1}. However, only up to {len(list_of_data_to_plot)} are available")
             sys.exit(1)
+    elif args.plot_cycle_isochrones:
+        for which_data_to_plot in range(args.start_from, len(list_of_data_to_plot)):
+            if which_data_to_plot < len(list_of_data_to_plot) and which_data_to_plot >= 0:
+                print(f"    [*] Isochrone number: {which_data_to_plot+1}")
+                print(f"    [*] log10 (Age/yr): {list_of_data_to_plot[which_data_to_plot].log_age:.3f}")
+                print(f"    [*] [M/H]: {list_of_data_to_plot[which_data_to_plot].MH:.3f}")
+                turnoff_point = get_MSTO_Turnoff(args, list_of_data_to_plot, which_data_to_plot)
+                if args.data_filename:
+                    gaia_data = Table.read(args.data_filename, format="ascii.ecsv")
+                    # Get the parameters from Gaia DR3 data
+                    G_data = gaia_data['phot_g_mean_mag']
+                    G_BP_data = gaia_data['phot_bp_mean_mag']
+                    G_RP_data = gaia_data['phot_rp_mean_mag']
+                    color_data = gaia_data['bp_rp']
+                    # Correct data by extinction and pass it from apparent to absolute magnitude
+                    corrected_color, absolute_magnitude_data = correct_data(args, G_BP_data, color_data, A_GBP_sub_Av, A_GRP_sub_Av) 
+                    plot_one_isochrone(args, list_of_data_to_plot, which_data_to_plot, turnoff_point, 
+                                       data_color=corrected_color, data_magnitude=absolute_magnitude_data)
+                else:
+                    plot_one_isochrone(args, list_of_data_to_plot, which_data_to_plot, turnoff_point)
+            
+            else:
+                print(f"[-] You want to get isochrone number {which_data_to_plot+1}. However, only up to {len(list_of_data_to_plot)} are available")
+                sys.exit(1)
+        sys.exit(0)
     else:
         if args.data_filename:
             gaia_data = Table.read(args.data_filename, format="ascii.ecsv")
@@ -425,7 +453,7 @@ def save_data_to_output_file(args: argparse.Namespace, turnoff_point: CMD_coords
                 print(f"[!] Object {object_name!r} has already been added in {str(script_save_file)!r}")
         with script_save_file.open('a') as f:
             f.write(line_to_write)
-        print(f"[+] Succesfully saved data for {object_name!r}")
+        print(f"[+] Succesfully saved data for {object_name!r} in {str(script_save_file)!r}")
     else:
         header_to_write = "# name file_containing_multiple_isochrones isochrone_id_selected object_type"
         header_to_write = f"{header_to_write} log_age MH Av distance MSTO_color MSTO_mag shifted_color shifted_mag first_elem_isochrone last_elem_isochrone\n"
