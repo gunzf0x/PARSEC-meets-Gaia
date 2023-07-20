@@ -483,7 +483,7 @@ def plot_before_extracting(args: argparse.Namespace, gaia_data: Table, ZAMS_isoc
              get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, data_file.MSTO_magnitude, data_file.extinction),
              marker="X", markersize=12, color="magenta",  markeredgecolor="black")
     if args.text_x_coord is not None and args.text_y_coord is not None and text_number == 1:
-        text = r'${\rm NGC2141}$'
+        text = f"{args.object_name.upper().replace('_','')}"
         text +='\n'
         text+= r'${\log ({\rm Age}/{\rm yr})} = $' + str(round(data_file.log_age, 2))
         text+= '\n'
