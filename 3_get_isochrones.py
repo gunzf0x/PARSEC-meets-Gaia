@@ -249,7 +249,7 @@ def plot_multiple_isochrones(args: argparse.Namespace, list_of_data_to_plot: lis
         ax.plot(color[args.first_n_elements:-args.last_n_elements], magnitude[args.first_n_elements:-args.last_n_elements], 
                 color=color_to_plot, marker=marker_selected, markersize = 5, 
                 label = f"{data.id}) log Age: {data.log_age}; [M/H]: {data.MH}", linestyle='None')
-    legend = plt.legend()
+    legend = plt.legend(ncol=2)
     for text in legend.get_texts():
         text.set_fontsize('large')
     plt.gca().invert_yaxis()
