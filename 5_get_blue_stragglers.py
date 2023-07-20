@@ -485,7 +485,7 @@ def plot_before_extracting(args: argparse.Namespace, gaia_data: Table, ZAMS_isoc
     if args.text_x_coord is not None and args.text_y_coord is not None and text_number == 1:
         text = f"{args.object_name.upper().replace('_','')}"
         text +='\n'
-        text+= r'${\log ({\rm Age}/{\rm yr})} = $' + str(round(data_file.log_age, 2))
+        text+= r'${\log ({\rm Age}/{\rm yr})} = $' + str(round(data_file.log_age, 3))
         text+= '\n'
         text += r"$[{\rm M}/{\rm H}] = $"+str(round(data_file.MH, 2))
         text += '\n'
