@@ -72,6 +72,7 @@ def parse_flags() -> argparse.Namespace:
     parser.add_argument('--save-data', action='store_true', help="Sava Stragglers Stars and the region created to select them")
     parser.add_argument('--save-figures', action='store_true', help="Save plots generated within the directory containing 'Gaia Data'")
     parser.add_argument('--figure-format', type=str, default="pdf", help="Format to save plots generated")
+    parser.add_argument('--shift-left-edge', type=float, default=1.5, help="Shift the left edge (used in Open Clusters) N times with respect to cluster thickness")
     # Parse the command-line arguments
     args = parser.parse_args()
     return args
@@ -324,7 +325,7 @@ def get_intersection_between_zams_and_left_limit(args: argparse.Namespace, origi
 
 def get_data_inside_a_range(args: argparse.Namespace, original_data: Table, isochrone_type: str,
                             MSTO_point: CMD_point, data_file: isochrone_data,
-                            upper_point: CMD_point | None = None):
+                            upper_point: CMD_point | None = None, filter_by_right_side: bool = True):
     data_table = copy.deepcopy(original_data)
     if isochrone_type.lower() == "zams":
         data_table = data_table[args.first_n_elements_ZAMS:-args.last_n_elements_ZAMS]
@@ -364,10 +365,10 @@ def get_data_inside_a_range(args: argparse.Namespace, original_data: Table, isoc
         apparent_magnitude_isochrone = apparent_magnitude_isochrone[mask_data]
         apparent_color_isochrone = apparent_color_isochrone[mask_data]
         # Filter by everything with a color lower than the max allowed right side
-        mask_data = apparent_color_isochrone < right_side_value
-        apparent_magnitude_isochrone = apparent_magnitude_isochrone[mask_data]
-        apparent_color_isochrone = apparent_color_isochrone[mask_data]
-         
+        if filter_by_right_side:
+            mask_data = apparent_color_isochrone < right_side_value
+            apparent_magnitude_isochrone = apparent_magnitude_isochrone[mask_data]
+            apparent_color_isochrone = apparent_color_isochrone[mask_data]
     else:
         print(f"[!] You have provided an invalid data type in 'get_data_inside_range' function ({isochrone_type!r})")
         sys.exit(1)
@@ -381,9 +382,14 @@ def set_selection_contour_area(args: argparse.Namespace, data_file: isochrone_da
     MSTO_point = CMD_point(color=pass_derredened_color_to_apparent_color(data_file.MSTO_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction), 
                            magnitude=get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, data_file.MSTO_magnitude, data_file.extinction))
     # 1) Get top right vertex
-    top_right_vertex = CMD_point(color=MSTO_point.color + args.add_color_MSTO, magnitude=MSTO_point.magnitude - args.subs_mag_MSTO)
-    contour.colors.append(top_right_vertex.color)
-    contour.magnitudes.append(top_right_vertex.magnitude)
+    if data_file.object_type.lower() == "oc":
+        top_right_vertex = CMD_point(color=MSTO_point.color + (args.add_color_MSTO * args.shift_left_edge), magnitude=MSTO_point.magnitude - args.subs_mag_MSTO)
+        contour.colors.append(top_right_vertex.color)
+        contour.magnitudes.append(top_right_vertex.magnitude)
+    else:
+        top_right_vertex = CMD_point(color=MSTO_point.color + args.add_color_MSTO, magnitude=MSTO_point.magnitude - args.subs_mag_MSTO)
+        contour.colors.append(top_right_vertex.color)
+        contour.magnitudes.append(top_right_vertex.magnitude)
     # ! Set a condition: if we want to apply a max left limit for the ZAMS
     if data_file.left_limit != "--" and MSTO_point.color - data_file.left_limit <= MSTO_point.color - args.add_color_MSTO:
         # 2) Get top left vertex
@@ -418,17 +424,33 @@ def set_selection_contour_area(args: argparse.Namespace, data_file: isochrone_da
     bottom_right_vertex = get_intersection_between_isochrone_and_line_fit(args, fit_isochrone, data_file, MSTO_point.magnitude + args.add_mag_MSTO)
     contour.colors.append(bottom_right_vertex.color)
     contour.magnitudes.append(bottom_right_vertex.magnitude)
-    # 6) Get the shifted isochrone upper than the MSTO and colder than the right-side in the CMD
-    right_fit_color, right_fit_magnitude = get_data_inside_a_range(args, fit_isochrone, "fit", MSTO_point, data_file)
-    for c, m in zip(right_fit_color, right_fit_magnitude):
-        contour.colors.append(c)
-        contour.magnitudes.append(m)
-    # 7) Get the mid-right point. Where the fitting isochrone touches the color-limit right side
-    mid_right_vertex, doIntercept = get_intersection_between_isochrone_and_line_fit_right_mid(args, fit_isochrone, data_file, MSTO_point.color + args.add_color_MSTO , MSTO_point)
-    if doIntercept:
-        contour.colors.append(mid_right_vertex.color)
-        contour.magnitudes.append(mid_right_vertex.magnitude)
-    else:
+    ### Check if the target is an open cluster or globular cluster.
+    ### If it is an open cluster, then use a right vertical edge to avoid selecting young RGB stars
+    if data_file.object_type.lower() == 'oc':
+        # 6) Get the shifted isochrone upper than the MSTO and colder than the right-side in the CMD
+        right_fit_color, right_fit_magnitude = get_data_inside_a_range(args, fit_isochrone, "fit", MSTO_point, data_file)
+        for c, m in zip(right_fit_color, right_fit_magnitude):
+            contour.colors.append(c)
+            contour.magnitudes.append(m)
+        # 7) Get the mid-right point. Where the fitting isochrone touches the color-limit right side
+        mid_right_vertex, doIntercept = get_intersection_between_isochrone_and_line_fit_right_mid(args, fit_isochrone, data_file, MSTO_point.color + (args.add_color_MSTO * args.shift_left_edge), 
+                                                                                                  MSTO_point)
+        if doIntercept:
+            contour.colors.append(mid_right_vertex.color)
+            contour.magnitudes.append(mid_right_vertex.magnitude)
+        else:
+            aux_vertex = get_intersection_between_isochrone_and_line_fit(args, fit_isochrone, data_file, MSTO_point.magnitude - args.subs_mag_MSTO)
+            contour.colors.append(aux_vertex.color)
+            contour.magnitudes.append(aux_vertex.magnitude)
+            contour.colors = contour.colors[1:]
+            contour.magnitudes = contour.magnitudes[1:]
+    elif data_file.object_type.lower() == 'gc':
+        # 6) Get the shifted isochrone upper than the MSTO and colder than the right-side in the CMD
+        right_fit_color, right_fit_magnitude = get_data_inside_a_range(args, fit_isochrone, "fit", MSTO_point, data_file, filter_by_right_side=False)
+        for c, m in zip(right_fit_color, right_fit_magnitude):
+            contour.colors.append(c)
+            contour.magnitudes.append(m)
+        # 7 Get point where isochrone fits with top-line
         aux_vertex = get_intersection_between_isochrone_and_line_fit(args, fit_isochrone, data_file, MSTO_point.magnitude - args.subs_mag_MSTO)
         contour.colors.append(aux_vertex.color)
         contour.magnitudes.append(aux_vertex.magnitude)
@@ -474,8 +496,9 @@ def plot_before_extracting(args: argparse.Namespace, gaia_data: Table, ZAMS_isoc
                color='grey', linestyle='--', alpha=alpha_val)
     plt.axhline(y=get_apparent_magnitude_from_abs_magnitude_and_dist(data_file.distance, data_file.MSTO_magnitude, data_file.extinction)-args.subs_mag_MSTO, 
                color='grey', linestyle='--', alpha=alpha_val)
-    plt.axvline(x=pass_derredened_color_to_apparent_color(data_file.MSTO_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction)+args.add_color_MSTO,
-                linestyle='--', color = 'grey', alpha=alpha_val)
+    if data_file.object_type.lower() == "oc":
+        plt.axvline(x=pass_derredened_color_to_apparent_color(data_file.MSTO_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction)+(args.add_color_MSTO * args.shift_left_edge),
+                    linestyle='--', color = 'grey', alpha=alpha_val)
     if data_file.left_limit != "--":
         plt.axvline(x=pass_derredened_color_to_apparent_color(data_file.MSTO_color, A_GBP_sub_Av, A_GRP_sub_Av, data_file.extinction)-data_file.left_limit,
                     linestyle="--", color='grey', alpha=alpha_val)
