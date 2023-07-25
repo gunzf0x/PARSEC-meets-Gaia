@@ -7,3 +7,4 @@ parameters_isolated_isochrone.dat
 *.pdf
 *_ZAMS.dat
 get_cluster_log_age_from_decimal_age.py
+extinction_from_excess_color.py
